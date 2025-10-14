@@ -1,0 +1,30 @@
+body {
+  background-color: #0b0d0f;
+  font-family: 'Inter', sans-serif;
+}
+
+.card {
+  border-radius: 20px !important;
+  transition: all 0.3s ease-in-out;
+}
+
+.card:hover {
+  box-shadow: 0 0 20px rgba(13, 202, 240, 0.2);
+}
+
+textarea {
+  background-color: #1a1d21 !important;
+  color: #fff !important;
+  border: 1px solid #333 !important;
+  border-radius: 10px;
+}
+
+textarea:focus {
+  border-color: #0dcaf0 !important;
+  box-shadow: 0 0 5px #0dcaf0;
+}
+
+button {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}

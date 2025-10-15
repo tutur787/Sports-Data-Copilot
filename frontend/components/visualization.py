@@ -57,17 +57,57 @@ def register_callbacks(app):
 
             # Extract data
             parsed = data.get("parsed", {})
+            print(f"Parsed data: {parsed}")
             fetcher = FetchData(parsed)
             df = fetcher.fetch_data()
+            print(df.head())
             charts = fetcher.create_graph(df)
+
+            # Normalize backend output
+            if isinstance(charts, str):
+                try:
+                    # Try to parse a JSON array string
+                    charts = json.loads(charts)
+                except Exception:
+                    # Split malformed concatenated JSONs if needed
+                    charts = [c for c in charts.split("}") if c.strip()]
+                    charts = [c + "}" if not c.endswith("}") else c for c in charts]
+            elif not isinstance(charts, list):
+                charts = [charts]
 
             if not charts:
                 return html.P("No data available."), {}, "", create_toast("No data available.", "warning")
 
             graphs = []
             for chart in charts:
-                fig = pio.from_json(chart)
-                graphs.append(dcc.Graph(figure=fig))
+                try:
+                    # Ensure we have a proper JSON string
+                    chart_str = chart if isinstance(chart, str) else json.dumps(chart)
+                    chart_str = chart_str.strip()
+
+                    # Skip empty or invalid JSON
+                    if not chart_str or not chart_str.startswith("{"):
+                        print("⚠️ Skipping invalid chart payload:", chart_str[:50])
+                        continue
+
+                    # Try parsing into a Plotly figure
+                    fig = pio.from_json(chart_str)
+
+                    # Validate figure content before rendering
+                    if not hasattr(fig, "data") or len(fig.data) == 0:
+                        print("⚠️ Empty figure received, skipping.")
+                        continue
+
+                    graphs.append(dcc.Graph(figure=fig))
+
+                except Exception as e:
+                    print(f"❌ Error loading chart: {e}")
+                    # fallback visual
+                    fallback = html.Div(
+                        f"Chart could not be loaded: {e}",
+                        style={"color": "red", "fontSize": "14px", "marginBottom": "10px"},
+                    )
+                    graphs.append(fallback)
 
             if len(graphs) == 1:
                 chart_output = graphs[0]

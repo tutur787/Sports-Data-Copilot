@@ -123,7 +123,6 @@ class FetchData:
                     else:
                         df_plot_abs = df[abs_cols].assign(team=self.team if not isinstance(self.team, list) else None)
                     df_melted_abs = df_plot_abs.melt(id_vars='team', var_name='metric', value_name='value')
-                    df_melted_abs['metric'] = df_melted_abs['metric'].apply(lambda x: x.split('_')[-1] if '_' in x else x)
                     if multiple_teams and 'team' in df_melted_abs.columns:
                         fig_abs = px.bar(
                             df_melted_abs,
@@ -150,7 +149,6 @@ class FetchData:
                     else:
                         df_plot_pct = df[percent_cols].assign(team=self.team if not isinstance(self.team, list) else None)
                     df_melted_pct = df_plot_pct.melt(id_vars='team', var_name='metric', value_name='value')
-                    df_melted_pct['metric'] = df_melted_pct['metric'].apply(lambda x: x.split('_')[-1] if '_' in x else x)
                     if multiple_teams and 'team' in df_melted_pct.columns:
                         fig_pct = px.bar(
                             df_melted_pct,
@@ -176,8 +174,6 @@ class FetchData:
 
         # --- LINE CHART ---
         elif chart_type == "line":
-            import plotly.graph_objects as go
-            from plotly.subplots import make_subplots
             dash_styles = ["solid", "dash", "dot", "dashdot"]
             mapped_metrics = list(dict.fromkeys(mapped_metrics))
             print(f"Mapped metrics for line chart: {mapped_metrics}")
@@ -297,6 +293,50 @@ class FetchData:
                 title=title
             )
             return pio.to_json(fig)
+        
+        elif chart_type == "table":
+            mapped_metrics = list(dict.fromkeys(mapped_metrics))
+            print(f"Mapped metrics for table chart: {mapped_metrics}")
+            cols_to_display = []
+            for metric in mapped_metrics:
+                cols = metric_to_cols.get(metric, [])
+                cols_to_display.extend(cols)
+            cols_to_display = [c for c in dict.fromkeys(cols_to_display) if c in df.columns]
+            
+            for id_col in ['season', 'team', 'player']:
+                if id_col in df.columns and id_col not in cols_to_display:
+                    cols_to_display.insert(0, id_col)
+
+            if not cols_to_display:
+                raise ValueError("No valid metric columns found for table display.")
+
+            display_headers = [col.split("_")[-1] for col in cols_to_display]
+            df_display = df[cols_to_display].copy().reset_index(drop=True)
+
+            # Convert all cell values to lists for safe serialization
+            cell_values = [df_display[col].astype(str).tolist() for col in cols_to_display]
+
+            fig = go.Figure(
+                data=[go.Table(
+                    header=dict(
+                        values=display_headers,
+                        fill_color='lightblue',
+                        align='center',
+                        font=dict(color='black', size=13)
+                    ),
+                    cells=dict(
+                        values=cell_values,
+                        fill_color='white',
+                        align='center',
+                        font=dict(color='black', size=12)
+                    )
+                )]
+            )
+            fig.update_layout(
+                title=dict(text=title, x=0.5),
+                margin=dict(l=20, r=20, t=40, b=20)
+            )
+            return [pio.to_json(fig, pretty=False)]
 
         # --- TABLE (DEFAULT) ---
         else:

@@ -42,8 +42,8 @@ Also, choose the most appropriate chart type for visualization if not specified.
 
 Return ONLY valid JSON with the following fields:
 {
-  "team": string or list of strings or null,
-  "league": string or null (options: 'Big 5 European Leagues Combined','ENG-Premier League','ESP-La Liga','FRA-Ligue 1','GER-Bundesliga','INT-European Championship','INT-Women's World Cup','INT-World Cup','ITA-Serie A'),
+  "team": string or list of strings or null (if player is mentioned, team should be the one they play for at given season, else null),
+  "league": string or null (should be league of team, options: 'Big 5 European Leagues Combined','ENG-Premier League','ESP-La Liga','FRA-Ligue 1','GER-Bundesliga','INT-European Championship','INT-Women's World Cup','INT-World Cup','ITA-Serie A'),
   "player": string or list of strings or null,
   "season": string or list of strings or null (format "2324" for 2023/24 season or ['20','21','22'] for [2020/21, 2021/22 and 2022/23 seasons]),
   "stat_type": string (options: "standard", "keeper", "shooting", "passing", "defense", "possession"),

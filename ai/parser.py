@@ -8,88 +8,13 @@ Architecture:
 """
 
 from __future__ import annotations
-
 import re
 from datetime import datetime
 from typing import Any
-
 import difflib
-
-try:
-    from rapidfuzz import fuzz, process
-except ImportError:  # pragma: no cover
-    fuzz = None
-    process = None
-
-try:
-    from backend.mappings.fbref_mapping import FBREF_METRIC_MAP, FBREF_TEAMS
-except Exception:  # pragma: no cover
-    # Local fallback so parser remains runnable without optional mapping deps.
-    FBREF_METRIC_MAP = {
-        "goals": "Gls",
-        "assists": "A",
-        "expected goals": "xG",
-        "xg": "xG",
-        "shots": "Sh",
-        "shots on target": "SoT",
-        "passes completed": "Cmp",
-        "passes attempted": "Att",
-        "pass accuracy": "Cmp%",
-        "key passes": "KP",
-        "possession": "Poss",
-        "possession %": "Poss",
-        "tackles": "Tkl",
-        "interceptions": "Int",
-        "clearances": "Clr",
-        "saves": "Sv",
-        "clean sheets": "CS",
-        "goals conceded": "GA",
-        "touches": "Touches",
-        "dribbles completed": "DribCmp",
-    }
-    FBREF_TEAMS = [
-        # Premier League
-        "Arsenal", "Aston Villa", "Bournemouth", "Brentford", "Brighton",
-        "Burnley", "Chelsea", "Crystal Palace", "Everton", "Fulham", "Leeds United",
-        "Liverpool", "Manchester City", "Manchester Utd", "Newcastle Utd",
-        "Nott'm Forest", "Tottenham", "West Ham", "Wolves", "Sheffield Utd",
-        "Leicester City", "Southampton", "Watford", "Cardiff City",
-        "Swansea City", "Hull City", "Stoke City", "West Brom",
-        "QPR", "Blackburn Rovers", "Bolton Wanderers", "Wigan Athletic",
-        "Sunderland", "Middlesbrough", "Derby County", "Reading", "Burnley",
-        "Charlton Athletic", "Coventry City", "Ipswich Town", "Norwich City",
-
-        # La Liga
-        "Alaves", "Athletic Club", "Atletico Madrid", "Barcelona", "Celta Vigo",
-        "Getafe", "Girona", "Granada", "Las Palmas", "Mallorca", "Osasuna",
-        "Rayo Vallecano", "Real Betis", "Real Madrid", "Real Sociedad",
-        "Sevilla", "Valencia", "Villarreal", 
-
-        # Bundesliga
-        "Augsburg", "Bayer Leverkusen", "Bayern Munich", "Bochum", "Borussia Dortmund",
-        "Borussia M'gladbach", "Darmstadt 98", "Eint Frankfurt", "FC Cologne",
-        "Heidenheim", "Hoffenheim", "Mainz 05", "RB Leipzig", "Union Berlin",
-        "VfB Stuttgart", "Werder Bremen", "Wolfsburg", "Hamburger SV", "Köln", "St. Pauli",
-        "Schalke 04", "Karlsruher SC", "Düsseldorf",
-
-        # Serie A
-        "AC Milan", "AS Roma", "Atalanta", "Bologna", "Cagliari", "Empoli", "Fiorentina",
-        "Frosinone", "Genoa", "Inter Milan", "Juventus", "Lazio", "Lecce",
-        "Monza", "Napoli", "Salernitana", "Sassuolo", "Torino", "Udinese", "Verona", "Pisa",
-        "Parma", "Cremonese", "Spezia", "Modena",
-
-        # Ligue 1
-        "Angers", "Auxerre", "Brest", "Clermont Foot", "Lens", "Lille", "Lorient",
-        "Lyon", "Marseille", "Metz", "Monaco", "Montpellier", "Nantes",
-        "Nice", "Paris S-G", "Reims", "Rennes", "Strasbourg", "Toulouse", "Troyes",
-        "Paris FC", "Le Havre", "Guingamp", "Dijon", "Sochaux", "Ajaccio", "Bordeaux", "Nîmes", "Valenciennes"
-    ]
-
-try:
-    import spacy
-except ImportError:  # pragma: no cover
-    spacy = None
-
+import spacy
+from rapidfuzz import fuzz, process
+from backend.mappings.fbref_mapping import FBREF_METRIC_MAP, FBREF_TEAMS
 
 DEFAULT_METRICS = {
     "standard": ["goals", "assists", "minutes"],
@@ -485,15 +410,15 @@ class SportsQueryParser:
 
         # Relative references.
         if "this season" in normalized_text:
-            return "2324"
+            return self._compact_season(datetime.now().year - 1)
         if "last season" in normalized_text:
-            return "2223"
+            return self._compact_season(datetime.now().year - 2)
 
         span = re.search(r"(last|past)\s+(\d+)\s+seasons?", normalized_text)
         if span:
             count = max(1, int(span.group(2)))
-            # Project currently defaults to 2023/24 in fetch layer.
-            base_start_year = 2023
+            # Project currently defaults to 2025/26 in fetch layer.
+            base_start_year = 2025
             seasons = [
                 self._compact_season(base_start_year - offset)
                 for offset in range(count - 1, -1, -1)

@@ -4,19 +4,26 @@ import dash_bootstrap_components as dbc
 
 layout = dbc.Card(
     [
-        dbc.CardHeader("Ask Your Football Analytics Question"),
         dbc.CardBody(
             [
+                html.Div(
+                    className="panel-head",
+                    children=[
+                        html.H4("Query Studio", className="panel-title"),
+                        html.P("Describe the team, player, metric, and season you want to analyze.", className="panel-subtitle"),
+                    ],
+                ),
+                html.Label("Your Question", htmlFor="query-input", className="query-label"),
                 dcc.Textarea(
                     id="query-input",
-                    placeholder="e.g. Show me Arsenal's passing stats for last season",
-                    style={"width": "100%", "height": "120px", "resize": "none"},
-                    className="mb-3",
+                    placeholder="e.g. Compare Arsenal and Liverpool expected goals over the last 3 seasons",
+                    className="query-textarea mb-3",
                 ),
-                dbc.Button("Analyze", id="submit-query", color="primary", className="w-100"),
-                html.Div(id="query-feedback", className="mt-3"),
-            ]
+                dbc.Button("Analyze Query", id="submit-query", className="analyze-btn w-100"),
+                html.Div(id="query-feedback", className="query-feedback mt-3"),
+            ],
+            className="panel-body",
         ),
     ],
-    className="shadow-lg bg-dark text-light rounded-4",
+    className="panel-card query-card h-100",
 )

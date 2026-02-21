@@ -97,8 +97,8 @@ TEAM_TO_LEAGUE = {
 
 CHART_PATTERNS = {
     "bar": ["bar chart", "bar graph", "compare", "comparison", "vs", "versus", "top"],
-    "line": ["line chart", "line graph", "trend", "over time", "across seasons", "by season"],
-    "scatter": ["scatter", "scatter plot"],
+    "line": ["line chart", "line graph", "trend", "over time", "across seasons", "by season", "past seasons"],
+    "scatter": ["scatter", "scatter plot", "against"],
     "pie": ["pie chart", "pie graph", "share", "distribution"],
     "table": ["table", "tabular", "list"],
     "heatmap": ["heatmap", "correlation"],
@@ -462,7 +462,10 @@ class SportsQueryParser:
         metrics = self._extract_metrics(normalized_text)
         stat_type = self._extract_stat_type(normalized_text, metrics)
         season = self._extract_season(prompt, normalized_text)
-        chart_type = self._extract_chart_type(normalized_text)
+        if len(season) > 1:
+            chart_type = "line"
+        else:
+            chart_type = self._extract_chart_type(normalized_text)
         metric_type = self._infer_metric_type(normalized_text, teams, players, league)
 
         result = dict(DEFAULT_PARSE)
@@ -505,7 +508,7 @@ if __name__ == "__main__":
         "Show me Arsenal's expected goals in the 2023 Premier League season",
         "Compare Real Madrid and Barcelona goals in La Liga 2022/23",
         "Liverpool possession stats past 5 seasons",
-        "Show me Manchester United passing stats this season",
+        "Show me Manchester United passing stats for the past 5 seasons",
         "Top 10 goalkeepers in Serie A 2021/22 by clean sheets",
         "Compare Messi and Ronaldo assists in 2021",
     ]

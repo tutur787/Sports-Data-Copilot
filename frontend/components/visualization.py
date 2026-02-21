@@ -8,29 +8,35 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 import json
 from dash import html, dcc, Output, Input, State
 import dash_bootstrap_components as dbc
-import plotly.express as px
 import plotly.io as pio
-import pandas as pd
 import requests
 from .config import BACKEND_URL
 from backend.classes.fetch_data import FetchData
+from backend.classes.visualization import Visualization
 
 layout = dbc.Card(
     [
-        dbc.CardHeader("Results & Visualizations"),
         dbc.CardBody(
             [
+                html.Div(
+                    className="panel-head",
+                    children=[
+                        html.H4("Results", className="panel-title"),
+                        html.P("Parsed query + generated charts from your selected metrics.", className="panel-subtitle"),
+                    ],
+                ),
                 html.Div(id="stats-summary", className="mb-3"),
                 dcc.Loading(
                     id="loading-chart",
                     children=html.Div(id="stat-chart"),
                     type="circle",
-                    color="#0dcaf0",
+                    color="#0f9d8d",
                 ),
-            ]
+            ],
+            className="panel-body",
         ),
     ],
-    className="shadow-lg bg-dark text-light rounded-4",
+    className="panel-card results-card h-100",
 )
 
 
@@ -61,7 +67,7 @@ def register_callbacks(app):
             fetcher = FetchData(parsed)
             df = fetcher.fetch_data()
             print(df.head())
-            charts = fetcher.create_graph(df)
+            charts = Visualization(parsed).create_graph(df)
 
             # Normalize backend output
             if isinstance(charts, str):
@@ -98,38 +104,30 @@ def register_callbacks(app):
                         print("⚠️ Empty figure received, skipping.")
                         continue
 
-                    graphs.append(dcc.Graph(figure=fig))
+                    graphs.append(dcc.Graph(figure=fig, className="chart-figure"))
 
                 except Exception as e:
                     print(f"❌ Error loading chart: {e}")
                     # fallback visual
-                    fallback = html.Div(
-                        f"Chart could not be loaded: {e}",
-                        style={"color": "red", "fontSize": "14px", "marginBottom": "10px"},
-                    )
+                    fallback = html.Div(f"Chart could not be loaded: {e}", className="chart-error")
                     graphs.append(fallback)
 
             if len(graphs) == 1:
                 chart_output = graphs[0]
             else:
-                chart_output = html.Div(graphs, style={"display": "flex", "flexDirection": "column", "gap": "20px"})
+                chart_output = html.Div(graphs, className="chart-stack")
 
             # Summary
             summary = html.Div(
                 [
-                    html.H5(f"Parsed Query", className="mb-2"),
+                    html.H5("Parsed Query", className="summary-title"),
                     html.Pre(
                         json.dumps(parsed, indent=2),
-                        style={
-                            "whiteSpace": "pre-wrap",
-                            "backgroundColor": "#1a1d21",
-                            "padding": "10px",
-                            "borderRadius": "8px",
-                            "fontSize": "14px",
-                        },
+                        className="parsed-json",
                     ),
-                    html.Small(f"Previewing first {len(df)} records."),
-                ]
+                    html.Small(f"Previewing first {len(df)} records.", className="summary-meta"),
+                ],
+                className="parsed-summary",
             )
 
             feedback = "✅ Query processed successfully."
@@ -151,6 +149,6 @@ def create_toast(message, color):
         duration=4000,
         is_open=True,
         dismissable=True,
-        className="position-fixed top-0 end-0 m-4",
+        className="app-toast position-fixed top-0 end-0 m-4",
         style={"zIndex": 2000},
     )

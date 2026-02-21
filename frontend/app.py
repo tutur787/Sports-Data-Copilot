@@ -1,12 +1,12 @@
 # app.py
-from dash import Dash, html, dcc
+from dash import Dash, html
 import dash_bootstrap_components as dbc
 from components.prompt_ui import layout as prompt_layout
 from components.visualization import layout as viz_layout, register_callbacks
 
 app = Dash(
     __name__,
-    external_stylesheets=[dbc.themes.SLATE],  # sleek modern dark theme
+    external_stylesheets=[dbc.themes.LUX],
     suppress_callback_exceptions=True,
     title="Sports Analytics Copilot"
 )
@@ -15,20 +15,49 @@ app = Dash(
 toast_container = html.Div(id="toast-container")
 
 # App layout
-app.layout = dbc.Container(
+app.layout = html.Div(
     [
-        html.H2("⚽ Sports Analytics Copilot", className="text-center mt-4 mb-2"),
-        html.Hr(),
-        dbc.Row(
+        html.Div(className="bg-orb orb-a"),
+        html.Div(className="bg-orb orb-b"),
+        dbc.Container(
             [
-                dbc.Col(prompt_layout, width=4, className="mt-3"),
-                dbc.Col(viz_layout, width=8, className="mt-3"),
+                html.Header(
+                    className="hero-panel mb-4",
+                    children=[
+                        html.Div(
+                            className="hero-copy",
+                            children=[
+                                html.P("Sports Data Copilot", className="hero-eyebrow"),
+                                html.H1("Ask Better Football Questions", className="hero-title"),
+                                html.P(
+                                    "Turn natural language into clear football analytics with structured parsing and instant visual output.",
+                                    className="hero-subtitle",
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="hero-stats",
+                            children=[
+                                html.Div([html.Span("NLP"), html.Small("Local parser")], className="stat-chip"),
+                                html.Div([html.Span("FBref"), html.Small("Team + player stats")], className="stat-chip"),
+                                html.Div([html.Span("Dash"), html.Small("Interactive visuals")], className="stat-chip"),
+                            ],
+                        ),
+                    ],
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(prompt_layout, lg=4, md=12),
+                        dbc.Col(viz_layout, lg=8, md=12),
+                    ],
+                    className="g-4 dashboard-grid",
+                ),
+                toast_container,
             ],
-            className="g-3",
+            className="page-wrap py-4 py-lg-5",
         ),
-        toast_container,
     ],
-    fluid=True,
+    className="app-shell",
 )
 
 # Register callbacks

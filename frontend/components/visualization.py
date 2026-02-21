@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 # visualization.py
 import json
-from dash import html, dcc, Output, Input, State
+from dash import html, dcc, Output, Input, State, ctx
 import dash_bootstrap_components as dbc
 import plotly.io as pio
 import requests
@@ -43,21 +43,73 @@ layout = dbc.Card(
 def register_callbacks(app):
     @app.callback(
         [
+            Output("adv-year-single", "disabled"),
+            Output("adv-year-start", "disabled"),
+            Output("adv-year-end", "disabled"),
+        ],
+        [Input("adv-year-mode", "value")],
+    )
+    def toggle_year_inputs(year_mode):
+        if year_mode == "range":
+            return True, False, False
+        return False, True, True
+
+    @app.callback(
+        [
             Output("stats-summary", "children"),
             Output("stat-chart", "children"),
             Output("query-feedback", "children"),
             Output("toast-container", "children"),
         ],
-        [Input("submit-query", "n_clicks")],
-        [State("query-input", "value")],
+        [Input("submit-query", "n_clicks"), Input("submit-advanced", "n_clicks")],
+        [
+            State("query-input", "value"),
+            State("adv-league", "value"),
+            State("adv-year-mode", "value"),
+            State("adv-year-single", "value"),
+            State("adv-year-start", "value"),
+            State("adv-year-end", "value"),
+            State("adv-player-input", "value"),
+            State("adv-team-select", "value"),
+            State("adv-stat-select", "value"),
+            State("adv-viz-type", "value"),
+        ],
         prevent_initial_call=True,
     )
-    def handle_query(n_clicks, query):
-        if not query:
-            return "", {}, "⚠️ Please enter a question first.", create_toast("Please enter a question.", "warning")
+    def handle_query(
+        n_clicks_prompt,
+        n_clicks_advanced,
+        query,
+        adv_league,
+        adv_year_mode,
+        adv_year_single,
+        adv_year_start,
+        adv_year_end,
+        adv_player_input,
+        adv_team_select,
+        adv_stat_select,
+        adv_viz_type,
+    ):
+        triggered = ctx.triggered_id
 
         try:
-            res = requests.post(f"{BACKEND_URL}/query", json={"prompt": query})
+            if triggered == "submit-query":
+                if not query:
+                    return "", {}, "⚠️ Please enter a question first.", create_toast("Please enter a question.", "warning")
+                res = requests.post(f"{BACKEND_URL}/query", json={"prompt": query})
+            else:
+                payload = {
+                    "league": adv_league,
+                    "year_mode": adv_year_mode,
+                    "year_single": adv_year_single,
+                    "year_start": adv_year_start,
+                    "year_end": adv_year_end,
+                    "players": adv_player_input,
+                    "teams": adv_team_select if isinstance(adv_team_select, list) else [],
+                    "stats": adv_stat_select if isinstance(adv_stat_select, list) else [],
+                    "viz_type": adv_viz_type,
+                }
+                res = requests.post(f"{BACKEND_URL}/advanced-query", json=payload)
             res.raise_for_status()
             data = res.json()
 

@@ -2,6 +2,7 @@
 from dash import Dash, html
 import dash_bootstrap_components as dbc
 from components.prompt_ui import layout as prompt_layout
+from components.advanced_ui import layout as advanced_layout
 from components.visualization import layout as viz_layout, register_callbacks
 
 app = Dash(
@@ -47,7 +48,19 @@ app.layout = html.Div(
                 ),
                 dbc.Row(
                     [
-                        dbc.Col(prompt_layout, lg=4, md=12),
+                        dbc.Col(
+                            dbc.Tabs(
+                                [
+                                    dbc.Tab(prompt_layout, label="Prompt Mode", tab_id="prompt-mode"),
+                                    dbc.Tab(advanced_layout, label="Structured Mode", tab_id="advanced-mode"),
+                                ],
+                                id="query-mode-tabs",
+                                active_tab="advanced-mode",
+                                className="mode-tabs",
+                            ),
+                            lg=4,
+                            md=12,
+                        ),
                         dbc.Col(viz_layout, lg=8, md=12),
                     ],
                     className="g-4 dashboard-grid",

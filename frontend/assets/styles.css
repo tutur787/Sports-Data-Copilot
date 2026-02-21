@@ -231,6 +231,56 @@ body {
   font-size: 0.9rem;
 }
 
+.mode-tabs .nav-tabs {
+  border: 0;
+  margin-bottom: 0.9rem;
+  gap: 0.45rem;
+}
+
+.mode-tabs .nav-link {
+  border: 1px solid var(--border);
+  border-radius: 999px !important;
+  color: var(--muted);
+  font-weight: 600;
+  background: #ffffff;
+  padding: 0.42rem 0.9rem;
+}
+
+.mode-tabs .nav-link.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+}
+
+.advanced-input,
+.advanced-dropdown,
+.advanced-radio {
+  font-size: 0.95rem;
+}
+
+.advanced-input,
+.advanced-dropdown .Select-control {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  background: #fff !important;
+}
+
+.advanced-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 4px var(--ring) !important;
+}
+
+.advanced-dropdown .Select-control:hover,
+.advanced-dropdown .Select-control:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 4px var(--ring) !important;
+}
+
+.advanced-radio .form-check-input:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
 #loading-chart {
   min-height: 300px;
 }

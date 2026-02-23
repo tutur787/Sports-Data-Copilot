@@ -146,6 +146,21 @@ METRIC_TO_STAT_TYPE_HINTS = {
     "dribble": "possession",
 }
 
+NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "couple": 2,
+    "few": 3,
+}
+
 PLAYER_LEADING_STOPWORDS = {
     "compare",
     "show",
@@ -387,6 +402,22 @@ class SportsQueryParser:
             return f"{start_year % 100:02d}"
         return f"{start_year % 100:02d}{end_year % 100:02d}"
 
+    @staticmethod
+    def _current_season_start_year() -> int:
+        """
+        Approximate football season boundary at July.
+        Feb 2026 -> current season starts in 2025 (2025/26).
+        """
+        now = datetime.now()
+        return now.year if now.month >= 7 else now.year - 1
+
+    @staticmethod
+    def _parse_count_token(token: str) -> int | None:
+        token = token.strip().lower()
+        if token.isdigit():
+            return int(token)
+        return NUMBER_WORDS.get(token)
+
     def _extract_season(self, prompt: str, normalized_text: str) -> str | list[str] | None:
         # Formats like 2023/24 or 2023-24.
         range_matches = re.findall(r"\b(20\d{2})\s*[-/]\s*(\d{2}|\d{4})\b", prompt)
@@ -410,17 +441,21 @@ class SportsQueryParser:
 
         # Relative references.
         if "this season" in normalized_text:
-            return self._compact_season(datetime.now().year - 1)
+            start_year = self._current_season_start_year()
+            return self._compact_season(start_year, start_year + 1)
         if "last season" in normalized_text:
-            return self._compact_season(datetime.now().year - 2)
+            start_year = self._current_season_start_year() - 1
+            return self._compact_season(start_year, start_year + 1)
 
-        span = re.search(r"(last|past)\s+(\d+)\s+seasons?", normalized_text)
+        span = re.search(r"(last|past)\s+([a-z0-9]+)\s+seasons?", normalized_text)
         if span:
-            count = max(1, int(span.group(2)))
-            # Project currently defaults to 2025/26 in fetch layer.
-            base_start_year = 2025
+            parsed_count = self._parse_count_token(span.group(2))
+            if parsed_count is None:
+                return None
+            count = max(1, parsed_count)
+            base_start_year = self._current_season_start_year()
             seasons = [
-                self._compact_season(base_start_year - offset)
+                self._compact_season(base_start_year - offset, base_start_year - offset + 1)
                 for offset in range(count - 1, -1, -1)
             ]
             return seasons if len(seasons) > 1 else seasons[0]
@@ -462,7 +497,7 @@ class SportsQueryParser:
         metrics = self._extract_metrics(normalized_text)
         stat_type = self._extract_stat_type(normalized_text, metrics)
         season = self._extract_season(prompt, normalized_text)
-        if len(season) > 1:
+        if isinstance(season, list) and len(season) > 1:
             chart_type = "line"
         else:
             chart_type = self._extract_chart_type(normalized_text)
@@ -508,7 +543,7 @@ if __name__ == "__main__":
         "Show me Arsenal's expected goals in the 2023 Premier League season",
         "Compare Real Madrid and Barcelona goals in La Liga 2022/23",
         "Liverpool possession stats past 5 seasons",
-        "Show me Manchester United passing stats for the past 5 seasons",
+        "Show me Manchester United passing stats last season",
         "Top 10 goalkeepers in Serie A 2021/22 by clean sheets",
         "Compare Messi and Ronaldo assists in 2021",
     ]

@@ -4,7 +4,16 @@ fbref_api.py — FBRef data access layer using soccerdata package.
 import re
 
 import backend.mappings.fbref_mapping as fbm
+import pandas as pd
 import soccerdata as sd
+
+BIG5_LEAGUES = [
+    "ENG-Premier League",
+    "ESP-La Liga",
+    "FRA-Ligue 1",
+    "GER-Bundesliga",
+    "ITA-Serie A",
+]
 
 
 def _normalize_one_season(value):
@@ -61,6 +70,31 @@ def _normalize_seasons(season):
     return normalized or ["25-26"]
 
 
+def _filter_player_df(df: pd.DataFrame, player: str | list | None) -> pd.DataFrame:
+    if player is None:
+        return df
+    if isinstance(player, str):
+        return df[df["player"].str.contains(player, case=False, na=False)]
+    if isinstance(player, list):
+        wanted = [p for p in player if isinstance(p, str) and p.strip()]
+        if not wanted:
+            return df
+        pattern = "|".join(re.escape(p) for p in wanted)
+        return df[df["player"].str.contains(pattern, case=False, na=False)]
+    return df
+
+
+def _player_search_leagues(league: str | None) -> list[str]:
+    if not league or league == "Big 5 European Leagues Combined":
+        return list(BIG5_LEAGUES)
+
+    leagues = [league]
+    for lg in BIG5_LEAGUES:
+        if lg != league:
+            leagues.append(lg)
+    return leagues
+
+
 def get_league_table(league: str = "ENG-Premier League", season: str = "2526"):
     """Return the league table for a given season."""
     fb = sd.FotMob(leagues=[league], seasons=_normalize_seasons(season))
@@ -85,15 +119,42 @@ def get_team_stats(league: str = "ENG-Premier League", season: str = "2526", sta
 
 def get_player_stats(league: str = "ENG-Premier League", season: str = "2324", stat_type: str = "standard", player: str = None):
     """Return player-level season stats."""
-    fb = sd.FBref(leagues=[league], seasons=_normalize_seasons(season))
-    df = fb.read_player_season_stats(stat_type=stat_type)
-    df = df.reset_index()
-    if player:
-        if isinstance(player, str):
-            df = df[df["player"].str.contains(player, case=False)]
-        elif isinstance(player, list):
-            df = df[df["player"].isin(player)]
-    return df
+    seasons = _normalize_seasons(season)
+    candidate_leagues = _player_search_leagues(league)
+
+    # For multi-player requests, collect across leagues (players may be in different leagues).
+    if isinstance(player, list):
+        found_frames: list[pd.DataFrame] = []
+        for lg in candidate_leagues:
+            try:
+                fb = sd.FBref(leagues=[lg], seasons=seasons)
+                df = fb.read_player_season_stats(stat_type=stat_type).reset_index()
+                filtered = _filter_player_df(df, player)
+                if not filtered.empty:
+                    found_frames.append(filtered)
+            except Exception:
+                continue
+
+        if found_frames:
+            combined = pd.concat(found_frames, ignore_index=True)
+            combined = combined.drop_duplicates()
+            return combined
+
+    # For single-player (or no player), try requested league first then fallback leagues.
+    last_df = pd.DataFrame()
+    for lg in candidate_leagues:
+        try:
+            fb = sd.FBref(leagues=[lg], seasons=seasons)
+            df = fb.read_player_season_stats(stat_type=stat_type).reset_index()
+            last_df = df
+            filtered = _filter_player_df(df, player)
+            if not filtered.empty:
+                return filtered
+        except Exception:
+            continue
+
+    # Preserve previous behavior shape: return a dataframe even when no match is found.
+    return _filter_player_df(last_df, player)
 
 def get_match_stats(
     league: str = "ENG-Premier League",

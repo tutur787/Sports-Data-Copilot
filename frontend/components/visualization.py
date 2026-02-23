@@ -190,6 +190,9 @@ def register_callbacks(app):
         except requests.exceptions.RequestException as e:
             msg = f"Backend error: {str(e)}"
             return html.P(msg), {}, "", create_toast(msg, "danger")
+        except Exception as e:
+            msg = f"Visualization error: {str(e)}"
+            return html.P(msg), {}, "", create_toast(msg, "danger")
 
 
 def create_toast(message, color):

@@ -1,19 +1,76 @@
 """
 fbref_api.py — FBRef data access layer using soccerdata package.
 """
+import re
+
 import backend.mappings.fbref_mapping as fbm
 import soccerdata as sd
 
-def get_league_table(league: str = "ENG-Premier League", season: str = "2324"):
+
+def _normalize_one_season(value):
+    """
+    Normalize internal season values to soccerdata-compatible formats.
+    Accepted by soccerdata (examples): '16-17', 2016, '2016-17', [14, 15, 16].
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, int):
+        return value
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    # Already valid season strings.
+    if re.fullmatch(r"\d{2}-\d{2}", text) or re.fullmatch(r"\d{4}-\d{2}", text):
+        return text
+
+    # e.g. 2023/24 or 2023-24 -> 23-24
+    match = re.fullmatch(r"(20\d{2})[/-](\d{2}|20\d{2})", text)
+    if match:
+        start_year = int(match.group(1))
+        end_part = match.group(2)
+        end_two_digits = int(end_part[-2:])
+        return f"{start_year % 100:02d}-{end_two_digits:02d}"
+
+    # Compact parser format: 2324 -> 23-24, 2122 -> 21-22
+    if re.fullmatch(r"\d{4}", text):
+        as_year = int(text)
+        if 1900 <= as_year <= 2100:
+            return as_year
+        return f"{text[:2]}-{text[2:]}"
+
+    # Two-digit season/year code: "23" -> 23
+    if re.fullmatch(r"\d{2}", text):
+        return int(text)
+
+    return text
+
+
+def _normalize_seasons(season):
+    """
+    Return season(s) as a list in formats soccerdata accepts.
+    """
+    if isinstance(season, (list, tuple, set)):
+        normalized = [_normalize_one_season(s) for s in season]
+    else:
+        normalized = [_normalize_one_season(season)]
+
+    normalized = [s for s in normalized if s is not None]
+    return normalized or ["25-26"]
+
+
+def get_league_table(league: str = "ENG-Premier League", season: str = "2526"):
     """Return the league table for a given season."""
-    fb = sd.FotMob(leagues=[league], seasons=[season] if isinstance(season, str) else [str(s) for s in season])
+    fb = sd.FotMob(leagues=[league], seasons=_normalize_seasons(season))
     df = fb.read_league_table()
     df = df.reset_index()
     return df
 
-def get_team_stats(league: str = "ENG-Premier League", season: str = "2324", stat_type: str = "standard", team: str = None):
+def get_team_stats(league: str = "ENG-Premier League", season: str = "2526", stat_type: str = "standard", team: str = None):
     """Return team-level season stats."""
-    fb = sd.FBref(leagues=[league], seasons=[season] if isinstance(season, str) else [str(s) for s in season])
+    fb = sd.FBref(leagues=[league], seasons=_normalize_seasons(season))
     df = fb.read_team_season_stats(stat_type=stat_type)
     df = df.reset_index()
     if team:
@@ -28,7 +85,7 @@ def get_team_stats(league: str = "ENG-Premier League", season: str = "2324", sta
 
 def get_player_stats(league: str = "ENG-Premier League", season: str = "2324", stat_type: str = "standard", player: str = None):
     """Return player-level season stats."""
-    fb = sd.FBref(leagues=[league], seasons=[season] if isinstance(season, str) else [str(s) for s in season])
+    fb = sd.FBref(leagues=[league], seasons=_normalize_seasons(season))
     df = fb.read_player_season_stats(stat_type=stat_type)
     df = df.reset_index()
     if player:
@@ -47,7 +104,7 @@ def get_match_stats(
     player: bool = False
 ):
     """Return match-level stats for a specific game."""
-    fb = sd.FBref(leagues=[league], seasons=[season] if isinstance(season, str) else [str(s) for s in season])
+    fb = sd.FBref(leagues=[league], seasons=_normalize_seasons(season))
     epl_schedule = fb.read_schedule()
 
     # Optional: reset index for easier viewing/debugging

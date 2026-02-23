@@ -70,11 +70,26 @@ class Visualization:
                 print(multiple_teams)
                 if not cols_to_use:
                     continue
-                if multiple_teams and len(cols_to_use) == 1:
+                # Single-column metrics are common; render a simple bar by a useful identifier.
+                if len(cols_to_use) == 1:
                     metric_col = cols_to_use[0]
-                    pie_data = df.groupby("team")[metric_col].sum()
-                    fig = px.pie(names=pie_data.index, values=pie_data.values, title=f"{title} — {metric} Comparison")
-                    figs.append(fig)
+                    id_col = next((c for c in ["team", "player", "season"] if c in df.columns), None)
+
+                    if id_col is None:
+                        df_plot = df.reset_index().rename(columns={"index": "row"})
+                        id_col = "row"
+                    else:
+                        df_plot = df.copy()
+
+                    bar_kwargs = {
+                        "x": id_col,
+                        "y": metric_col,
+                        "title": f"{title} — {metric}",
+                    }
+                    if id_col in {"team", "player"}:
+                        bar_kwargs["color"] = id_col
+
+                    figs.append(px.bar(df_plot, **bar_kwargs))
                     continue
                 # Split into percentage and absolute columns
                 percent_cols = [col for col in cols_to_use if "%" in col]

@@ -34,6 +34,8 @@ DEFAULT_PARSE = {
     "metric": None,
     "metric_type": None,
     "chart_type": None,
+    "top_n": None,          # int — limit results to top/bottom N entities
+    "top_n_ascending": False,  # False = highest first, True = lowest first
 }
 
 LEAGUE_PATTERNS = {
@@ -95,14 +97,43 @@ TEAM_TO_LEAGUE = {
     for team in teams
 }
 
-CHART_PATTERNS = {
-    "bar": ["bar chart", "bar graph", "compare", "comparison", "vs", "versus", "top"],
-    "line": ["line chart", "line graph", "trend", "over time", "across seasons", "by season", "past seasons"],
-    "scatter": ["scatter", "scatter plot", "against"],
-    "pie": ["pie chart", "pie graph", "share", "distribution"],
-    "table": ["table", "tabular", "list"],
-    "heatmap": ["heatmap", "correlation"],
-    "radar": ["radar", "spider chart"],
+# ── Chart-type keyword dictionaries ──────────────────────────────────────────
+#
+# EXPLICIT_CHART_KEYWORDS  — the user names a specific chart type.
+#   These always win: no inference or override may contradict them.
+#
+# CONTEXTUAL_CHART_HINTS   — words that *suggest* a chart family but are not
+#   explicit requests.  They are only consulted when smart shape-based inference
+#   cannot make a confident decision (e.g. "distribution" → pie).
+#   Checked in the order listed; first match wins.
+
+EXPLICIT_CHART_KEYWORDS: dict[str, list[str]] = {
+    "bar":      ["bar chart", "bar graph", "bar plot"],
+    "line":     ["line chart", "line graph", "line plot"],
+    # "scatter" alone (without "plot/chart") is also unambiguous enough to honour
+    "scatter":  ["scatter plot", "scatter chart", "scatter graph", "scatter"],
+    "pie":      ["pie chart", "pie graph", "donut chart"],
+    "table":    ["table", "tabular", "list"],
+    "heatmap":  ["heatmap", "heat map", "correlation matrix"],
+    "radar":    ["radar chart", "radar plot", "spider chart", "spider web chart"],
+}
+
+CONTEXTUAL_CHART_HINTS: dict[str, list[str]] = {
+    # Proportional / compositional language → pie (only valid for ≤8 entities;
+    # entity-count guard is applied in _smart_chart_type).
+    "pie":      ["share", "breakdown", "proportion", "percentage of", "distribution of"],
+    # Time-series language → line, but ONLY when n_seasons > 1 (guard in
+    # _smart_chart_type prevents a single-season "trend" query becoming a
+    # one-point line chart).
+    "line":     ["over time", "across seasons", "by season", "trend", "evolution", "progression"],
+    # Ranking / best-of language → bar.
+    # Note: "vs " and "versus" are intentionally REMOVED here — they caused
+    # "goals vs xG" queries to become bar charts instead of scatter.
+    "bar":      ["top ", "ranking", "ranked", "best", "worst", "highest", "lowest",
+                 "most", "fewest"],
+    "heatmap":  ["correlation", "correlate"],
+    # Natural analyst phrasing for scatter — added alongside the explicit keywords.
+    "scatter":  ["relationship between", "plotted against", "against each other"],
 }
 
 STAT_TYPE_PATTERNS = {
@@ -265,11 +296,130 @@ class SportsQueryParser:
             return "Big 5 European Leagues Combined"
         return None
 
-    def _extract_chart_type(self, normalized_text: str) -> str | None:
-        for chart_type, patterns in CHART_PATTERNS.items():
-            if any(p in normalized_text for p in patterns):
+    @staticmethod
+    def _extract_explicit_chart_type(normalized_text: str) -> str | None:
+        """Return a chart type only when the user names one explicitly."""
+        for chart_type, keywords in EXPLICIT_CHART_KEYWORDS.items():
+            if any(kw in normalized_text for kw in keywords):
                 return chart_type
         return None
+
+    @staticmethod
+    def _extract_contextual_chart_hint(normalized_text: str) -> str | None:
+        """Return a suggestive chart type from loose contextual keywords."""
+        for chart_type, hints in CONTEXTUAL_CHART_HINTS.items():
+            if any(h in normalized_text for h in hints):
+                return chart_type
+        return None
+
+    @staticmethod
+    def _smart_chart_type(
+        normalized_text: str,
+        n_seasons: int,
+        n_entities: int,
+        n_metrics: int,
+        metric_type: str | None,
+        contextual_hint: str | None,
+    ) -> str:
+        """
+        Choose the most appropriate chart type from the *shape* of the data,
+        applying sports-analytics best practices.
+
+        Priority order (first matching rule wins):
+
+        1.  Multi-season + league-wide           → heatmap
+            (20 lines on one chart is unreadable)
+        2.  Multi-season + specific entities     → line
+        3.  Single season + 2 metrics + league   → scatter
+            (each team/player is a dot; reveals correlations)
+        4.  Single season + 2 metrics + players  → scatter
+        5.  Proportional hint + ≤8 entities      → pie
+            (only when data is genuinely parts-of-a-whole)
+        6.  League-wide + ≥4 metrics             → heatmap
+            (many teams × many metrics; bar becomes a wall)
+        7.  2–4 entities + 5–8 metrics           → radar
+            (profile polygon; minimum 5 axes to be meaningful)
+        8.  2+ entities                          → bar
+        9.  League-wide + 1–3 metrics            → bar (ranking)
+        10. "trend" hint requires n_seasons > 1  → ignore if single season
+        11. Other contextual hint                → honour it
+        12. Default                              → table
+        """
+        # Convenience booleans
+        is_league = metric_type == "league"
+        is_player = metric_type == "player"
+
+        # 1. Multi-season + league-wide → heatmap (teams on y-axis, seasons on x)
+        #    A line chart here means 20 overlapping lines — completely unreadable.
+        if n_seasons > 1 and is_league:
+            return "heatmap"
+
+        # 2. Multi-season + known entities → line (time-series trend per team)
+        if n_seasons > 1:
+            return "line"
+
+        # 3. League-wide + exactly 2 metrics → scatter
+        #    Classic analytics: each team as a dot on (metric_x, metric_y) plane.
+        #    Reveals correlations (xG vs Goals, Shots vs xG, etc.).
+        if is_league and n_metrics == 2 and n_entities == 0:
+            return "scatter"
+
+        # 4. Player context + exactly 2 metrics, no specific players named
+        #    → scatter (each player is a dot).
+        if is_player and n_metrics == 2 and n_entities == 0:
+            return "scatter"
+
+        # 5. Proportional / share language → pie, but ONLY when:
+        #    - ≤8 entities (20-slice pie is unusable)
+        #    - exactly 1 metric (pie requires a single "size" value per slice)
+        share_words = {"share", "breakdown", "proportion", "percentage of", "distribution of"}
+        if (
+            any(w in normalized_text for w in share_words)
+            and n_metrics == 1
+            and (n_entities == 0 or n_entities <= 8)
+            and not is_league  # league-wide with share hint → bar is cleaner
+        ):
+            return "pie"
+
+        # 6. League-wide + 3+ metrics → heatmap
+        #    (20 teams × 3+ metrics as grouped bars = unusable wall of colour;
+        #     heatmap gives instant visual ranking across all dimensions)
+        if is_league and n_metrics >= 3:
+            return "heatmap"
+
+        # 7. Radar: multi-entity profile comparison.
+        #    Minimum 5 metrics so the polygon has enough axes to be meaningful
+        #    (3-axis radar = triangle; 4-axis = square — both worse than bar).
+        #    Cap at 4 entities: 5+ filled areas overlap too heavily.
+        if 2 <= n_entities <= 3 and 5 <= n_metrics <= 8:
+            return "radar"
+
+        # 8. Multiple explicit entities → bar (grouped side-by-side)
+        if n_entities >= 2:
+            return "bar"
+
+        # 9. League-wide + 1–3 metrics → bar (ranked teams on one axis)
+        if is_league and n_metrics <= 3:
+            return "bar"
+
+        # 10. "trend" contextual hint is only meaningful with multiple seasons;
+        #     ignore it for single-season queries (would produce a one-point line).
+        if contextual_hint == "line" and n_seasons <= 1:
+            contextual_hint = None
+
+        # 10b. "correlation" heatmap hint is only meaningful when there are
+        #      enough observations to form a matrix (≥3 entities OR ≥3 seasons).
+        #      With 1 team + 1 season there is a single data row — a correlation
+        #      matrix is mathematically undefined and visually useless.
+        if contextual_hint == "heatmap" and n_entities < 3 and n_seasons < 3:
+            contextual_hint = None
+
+        # 11. Honour remaining contextual hints (top/ranking/best → bar, etc.)
+        if contextual_hint:
+            return contextual_hint
+
+        # 12. Default: table — most precise fallback for single-entity lookups
+        return "table"
 
     def _extract_metrics(self, normalized_text: str) -> list[str]:
         found: list[str] = []
@@ -319,18 +469,21 @@ class SportsQueryParser:
             for i in range(len(words) - size + 1):
                 candidates.add(" ".join(words[i : i + size]))
 
+        already_found = set(teams)
         for candidate in candidates:
             if process is not None and fuzz is not None:
                 match = process.extractOne(candidate, self.team_names, scorer=fuzz.WRatio)
                 if match is None:
                     continue
                 team_name, score, _ = match
-                if score >= 92:
+                if score >= 92 and team_name not in already_found:
                     teams.append(team_name)
+                    already_found.add(team_name)
             else:
                 closest = difflib.get_close_matches(candidate, self.team_names, n=1, cutoff=0.92)
-                if closest:
+                if closest and closest[0] not in already_found:
                     teams.append(closest[0])
+                    already_found.add(closest[0])
 
         # Deduplicate while preserving order.
         return list(dict.fromkeys(teams))
@@ -418,6 +571,43 @@ class SportsQueryParser:
             return int(token)
         return NUMBER_WORDS.get(token)
 
+    def _extract_top_n(self, normalized_text: str) -> tuple[int | None, bool]:
+        """
+        Extract a numeric entity limit from ranking phrases.
+
+        Returns (n, ascending) where ascending=True means "lowest first"
+        (e.g. "worst 5", "bottom 3").
+
+        Examples
+        --------
+        "top 10 scorers"        → (10, False)
+        "best five teams"       → (5,  False)
+        "bottom 3 clubs"        → (3,  True)
+        "worst 5 goalkeepers"   → (5,  True)
+        "leading 8 players"     → (8,  False)
+        """
+        # Descending keywords: higher value = better
+        desc_match = re.search(
+            r'\b(?:top|best|leading|highest|most)\s+([a-z0-9]+)\b',
+            normalized_text,
+        )
+        if desc_match:
+            n = self._parse_count_token(desc_match.group(1))
+            if n:
+                return n, False
+
+        # Ascending keywords: lower value = "worst"
+        asc_match = re.search(
+            r'\b(?:bottom|worst|lowest|fewest|least)\s+([a-z0-9]+)\b',
+            normalized_text,
+        )
+        if asc_match:
+            n = self._parse_count_token(asc_match.group(1))
+            if n:
+                return n, True
+
+        return None, False
+
     def _extract_season(self, prompt: str, normalized_text: str) -> str | list[str] | None:
         # Formats like 2023/24 or 2023-24.
         range_matches = re.findall(r"\b(20\d{2})\s*[-/]\s*(\d{2}|\d{4})\b", prompt)
@@ -433,9 +623,10 @@ class SportsQueryParser:
             return compact_ranges[0] if len(compact_ranges) == 1 else compact_ranges
 
         # Explicit single season years (e.g., "in 2023 season").
+        # Treat 2023 as the 2023/24 season start → compact code "2324".
         year_matches = re.findall(r"\b(20\d{2})\b", prompt)
         if year_matches:
-            compact_years = [self._compact_season(int(y)) for y in year_matches]
+            compact_years = [self._compact_season(int(y), int(y) + 1) for y in year_matches]
             compact_years = list(dict.fromkeys(compact_years))
             return compact_years[0] if len(compact_years) == 1 else compact_years
 
@@ -469,7 +660,14 @@ class SportsQueryParser:
         players: list[str],
         league: str | None,
     ) -> str | None:
-        if len(teams) >= 2 and (" vs " in normalized_text or " versus " in normalized_text or " against " in normalized_text or "compare" in normalized_text):
+        # Only treat as a specific match query when the user explicitly asks for
+        # head-to-head match data ("vs" / "against"). "compare" alone means a
+        # season-stat comparison, not a single-game lookup.
+        if len(teams) >= 2 and (
+            " vs " in normalized_text
+            or " versus " in normalized_text
+            or " against " in normalized_text
+        ):
             return "match"
         if len(players) > 0:
             return "player"
@@ -497,31 +695,51 @@ class SportsQueryParser:
         metrics = self._extract_metrics(normalized_text)
         stat_type = self._extract_stat_type(normalized_text, metrics)
         season = self._extract_season(prompt, normalized_text)
-        if isinstance(season, list) and len(season) > 1:
-            chart_type = "line"
-        else:
-            chart_type = self._extract_chart_type(normalized_text)
         metric_type = self._infer_metric_type(normalized_text, teams, players, league)
+        top_n, top_n_ascending = self._extract_top_n(normalized_text)
 
         result = dict(DEFAULT_PARSE)
-        result["team"] = self._as_scalar_or_list(teams)
-        result["player"] = self._as_scalar_or_list(players)
-        result["league"] = league or DEFAULT_LEAGUE
-        result["season"] = season
-        result["stat_type"] = stat_type
+        result["team"]        = self._as_scalar_or_list(teams)
+        result["player"]      = self._as_scalar_or_list(players)
+        result["league"]      = league or DEFAULT_LEAGUE
+        result["season"]      = season
+        result["stat_type"]      = stat_type
+        result["metric_type"]    = metric_type
+        result["top_n"]          = top_n
+        result["top_n_ascending"] = top_n_ascending
+
+        if not metrics:
+            metrics = list(DEFAULT_METRICS.get(stat_type, ["all"]))
         result["metric"] = self._as_scalar_or_list(metrics)
-        result["metric_type"] = metric_type
-        result["chart_type"] = chart_type
 
-        if result["metric"] is None:
-            result["metric"] = DEFAULT_METRICS.get(stat_type, ["all"])
+        # ── Chart-type resolution (priority order) ────────────────────────
+        #
+        # P1: User explicitly names a chart type ("bar chart", "radar", …)
+        #     → always respected, no further inference.
+        #
+        # P2: Smart shape-based inference + contextual hints
+        #     → chosen when no explicit keyword is present.
 
-        # Conservative chart default for unspecified requests.
-        if result["chart_type"] is None:
-            if metric_type in {"team", "player", "match"} and isinstance(result["metric"], list) and len(result["metric"]) > 1:
-                result["chart_type"] = "bar"
-            else:
-                result["chart_type"] = "table"
+        explicit = self._extract_explicit_chart_type(normalized_text)
+
+        if explicit:
+            result["chart_type"] = explicit
+        else:
+            n_seasons  = len(season) if isinstance(season, list) else (1 if season else 0)
+            n_teams    = len(teams)   if isinstance(teams, list)  else (1 if teams   else 0)
+            n_players  = len(players) if isinstance(players, list) else (1 if players else 0)
+            n_entities = n_teams + n_players
+            n_metrics  = len(metrics) if isinstance(metrics, list) else (1 if metrics else 0)
+            contextual = self._extract_contextual_chart_hint(normalized_text)
+
+            result["chart_type"] = self._smart_chart_type(
+                normalized_text,
+                n_seasons,
+                n_entities,
+                n_metrics,
+                metric_type,
+                contextual,
+            )
 
         return result
 

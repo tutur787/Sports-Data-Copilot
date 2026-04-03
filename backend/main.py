@@ -1,8 +1,9 @@
+import logging
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict, Optional
-import logging
-import pandas as pd
 
 from ai.parser import parse_prompt
 from .classes.fetch_data import FetchData
@@ -11,17 +12,34 @@ from .classes.query_builder import (
     ADVANCED_VIZ_TYPES,
     build_parsed_from_advanced,
 )
-from .mappings.fbref_mapping import FBREF_METRIC_MAP, FBREF_TEAMS
+from .classes.visualization import Visualization
+from .mappings.fbref_mapping import (
+    FBREF_METRIC_MAP,
+    FBREF_TEAMS,
+    STAT_TYPE_METRICS,
+    STAT_TYPE_DEFAULTS,
+)
 
 app = FastAPI(title="Sports Data Copilot")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Request / response models
+# ---------------------------------------------------------------------------
 
 class QueryRequest(BaseModel):
     prompt: str
 
+
 class QueryResponse(BaseModel):
-    parsed: Dict
+    parsed: Dict[str, Any]
     data_preview: Optional[List[Dict]] = None
-    
+    charts: Optional[List[str]] = None
+    viz_error: Optional[str] = None  # surfaced when visualization fails
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -35,33 +53,66 @@ class AdvancedQueryRequest(BaseModel):
     players: Optional[str] = None
     teams: Optional[List[str]] = None
     stats: Optional[List[str]] = None
+    stat_type: Optional[str] = None   # explicit stat category from UI
     viz_type: Optional[str] = "table"
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _build_response(parsed: dict, df: Optional[pd.DataFrame]) -> QueryResponse:
+    """Build data preview + charts and return a complete QueryResponse."""
+    data_preview: Optional[List[Dict]] = None
+    charts: Optional[List[str]] = None
+    viz_error: Optional[str] = None
+
+    if df is not None and not df.empty:
+        try:
+            data_preview = df.head(10).to_dict(orient="records")
+        except Exception:
+            data_preview = None
+
+        try:
+            charts = Visualization(parsed).create_graph(df)
+        except Exception as exc:
+            viz_error = str(exc)
+            logger.warning("Visualization failed: %s", exc)
+    elif df is not None and df.empty:
+        viz_error = "No data found for this query. Try a different season, league, or team name."
+
+    return QueryResponse(
+        parsed=parsed,
+        data_preview=data_preview,
+        charts=charts,
+        viz_error=viz_error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     try:
         parsed = parse_prompt(request.prompt)
-        fetcher = FetchData(parsed)
-        df = fetcher.fetch_data()
-        data_preview = df.head(10).to_dict(orient="records") if df is not None else None
-        return QueryResponse(parsed=parsed, data_preview=data_preview)
-    except Exception as e:
-        logging.error(f"Error processing query: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        df = FetchData(parsed).fetch_data()
+        return _build_response(parsed, df)
+    except Exception as exc:
+        logger.error("Error in /query: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/advanced-query", response_model=QueryResponse)
 async def advanced_query(request: AdvancedQueryRequest):
     try:
         parsed = build_parsed_from_advanced(request.model_dump())
-        fetcher = FetchData(parsed)
-        df = fetcher.fetch_data()
-        data_preview = df.head(10).to_dict(orient="records") if df is not None else None
-        return QueryResponse(parsed=parsed, data_preview=data_preview)
-    except Exception as e:
-        logging.error(f"Error processing advanced query: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        df = FetchData(parsed).fetch_data()
+        return _build_response(parsed, df)
+    except Exception as exc:
+        logger.error("Error in /advanced-query: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/advanced-options")
@@ -69,7 +120,8 @@ async def advanced_options():
     return {
         "leagues": ADVANCED_LEAGUES,
         "teams": sorted(set(FBREF_TEAMS)),
-        "stats": sorted(set(FBREF_METRIC_MAP.keys())),
+        "stats_by_type": STAT_TYPE_METRICS,
+        "stat_type_defaults": STAT_TYPE_DEFAULTS,
         "viz_types": ADVANCED_VIZ_TYPES,
     }
 

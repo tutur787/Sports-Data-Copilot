@@ -19,32 +19,58 @@ ADVANCED_LEAGUES = [
 
 ADVANCED_VIZ_TYPES = ["bar", "line", "scatter", "pie", "table", "heatmap", "radar"]
 
+# All stat_type values accepted by soccerdata FBref.
+# Used to validate an explicit stat_type from the UI before passing to the API.
+VALID_STAT_TYPES = {
+    "standard", "keeper", "keeper_adv",
+    "shooting", "passing", "passing_types", "goal_shot_creation",
+    "defense", "possession", "playing_time", "misc",
+}
+
 DEFAULT_METRICS = {
-    "standard": ["goals", "assists", "minutes"],
-    "keeper": ["saves", "clean sheets", "goals conceded"],
-    "shooting": ["shots", "shots on target", "goals"],
-    "passing": ["passes completed", "pass accuracy", "passes attempted"],
-    "defense": ["tackles", "interceptions", "clearances"],
-    "possession": ["possession %", "touches", "dribbles completed"],
+    "standard":          ["goals", "assists", "expected goals"],
+    "keeper":            ["saves", "clean sheets", "goals conceded"],
+    "keeper_adv":        ["saves", "post-shot xg", "expected goals against"],
+    "shooting":          ["shots", "shots on target", "expected goals"],
+    "passing":           ["passes completed", "pass accuracy", "key passes"],
+    "passing_types":     ["crosses", "through balls", "long passes"],
+    "goal_shot_creation":["key passes", "progressive passes", "dribbles completed"],
+    "defense":           ["tackles", "interceptions", "clearances"],
+    "possession":        ["touches", "dribbles completed", "carries"],
+    "playing_time":      ["goals", "assists"],
+    "misc":              ["yellow cards", "red cards", "fouls committed"],
 }
 
 METRIC_TO_STAT_TYPE_HINTS = {
-    "xg": "shooting",
-    "expected goals": "shooting",
-    "shots on target": "shooting",
-    "shots": "shooting",
-    "shot": "shooting",
-    "save": "keeper",
-    "clean sheet": "keeper",
-    "passes": "passing",
-    "pass": "passing",
-    "assist": "passing",
-    "tackles": "defense",
-    "interceptions": "defense",
-    "clearances": "defense",
-    "possession": "possession",
-    "touches": "possession",
-    "dribble": "possession",
+    "xg":               "shooting",
+    "expected goals":   "shooting",
+    "shots on target":  "shooting",
+    "shots":            "shooting",
+    "shot":             "shooting",
+    "xg per shot":      "shooting",
+    "save":             "keeper",
+    "clean sheet":      "keeper",
+    "goals conceded":   "keeper",
+    "post-shot xg":     "keeper_adv",
+    "expected goals against": "keeper_adv",
+    "passes":           "passing",
+    "pass":             "passing",
+    "key pass":         "passing",
+    "through ball":     "passing_types",
+    "cross":            "passing_types",
+    "long pass":        "passing_types",
+    "assist":           "passing",
+    "tackles":          "defense",
+    "interceptions":    "defense",
+    "clearances":       "defense",
+    "blocks":           "defense",
+    "possession":       "possession",
+    "touches":          "possession",
+    "dribble":          "possession",
+    "carries":          "possession",
+    "yellow card":      "misc",
+    "red card":         "misc",
+    "fouls":            "misc",
 }
 
 
@@ -138,7 +164,13 @@ def build_parsed_from_advanced(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         metrics = []
 
-    stat_type = _infer_stat_type(metrics)
+    # Prefer an explicitly chosen stat_type from the UI; fall back to inference.
+    explicit_stat_type = payload.get("stat_type")
+    stat_type = (
+        explicit_stat_type
+        if explicit_stat_type and explicit_stat_type in VALID_STAT_TYPES
+        else _infer_stat_type(metrics)
+    )
     if not metrics:
         metrics = DEFAULT_METRICS.get(stat_type, ["all"])
 
@@ -149,6 +181,13 @@ def build_parsed_from_advanced(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         metric_type = "league"
 
+    # Advanced UI exposes a numeric "top_n" input (optional).
+    raw_top_n = payload.get("top_n")
+    try:
+        top_n = int(raw_top_n) if raw_top_n not in (None, "", 0) else None
+    except (ValueError, TypeError):
+        top_n = None
+
     return {
         "team": _as_scalar_or_list(teams),
         "league": league,
@@ -158,4 +197,6 @@ def build_parsed_from_advanced(payload: dict[str, Any]) -> dict[str, Any]:
         "metric": _as_scalar_or_list(metrics),
         "metric_type": metric_type,
         "chart_type": (payload.get("viz_type") or "table").lower(),
+        "top_n": top_n,
+        "top_n_ascending": False,
     }

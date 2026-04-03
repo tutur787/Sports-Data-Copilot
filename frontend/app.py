@@ -29,7 +29,7 @@ app.layout = html.Div(
                             className="hero-copy",
                             children=[
                                 html.P("Sports Data Copilot", className="hero-eyebrow"),
-                                html.H1("Ask Better Football Questions", className="hero-title"),
+                                html.H1("Football Analytics, Instantly", className="hero-title"),
                                 html.P(
                                     "Turn natural language into clear football analytics with structured parsing and instant visual output.",
                                     className="hero-subtitle",
@@ -51,8 +51,8 @@ app.layout = html.Div(
                         dbc.Col(
                             dbc.Tabs(
                                 [
-                                    dbc.Tab(prompt_layout, label="Prompt Mode", tab_id="prompt-mode"),
-                                    dbc.Tab(advanced_layout, label="Structured Mode", tab_id="advanced-mode"),
+                                    dbc.Tab(html.Div(prompt_layout, style={"paddingTop": "2rem"}), label="Prompt Mode", tab_id="prompt-mode"),
+                                    dbc.Tab(html.Div(advanced_layout, style={"paddingTop": "2rem"}), label="Structured Mode", tab_id="advanced-mode"),
                                 ],
                                 id="query-mode-tabs",
                                 active_tab="advanced-mode",
